@@ -105,21 +105,28 @@ void FPGA::largeMV(const float* large_mat, const float* input, float* output, in
   float* vec = this->vector();
   float* mat = this->matrix();
 
-  // 0) Initialize output vector		
+  // 0) Initialize output vector                
   for(int i = 0; i < num_output; ++i)
     output[i] = 0;
 
   for(int i = 0; i < num_output; i += m_size_)
   {
     for(int j = 0; j < num_input; j += v_size_)
-    {			
+    {
       // 0) Initialize input vector
       int block_row = min(m_size_, num_output-i);
       int block_col = min(v_size_, num_input-j);
 
       // 1) Assign a vector
-     
-      // 2) Assign a matrix
+      memset(vec, 0, sizeof(float) * v_size_);
+      for(int k=0; k<block_col; k++)
+        vec[k] = input[j+k];
+
+      // 2) Assign a matrix 
+      memset(mat, 0, sizeof(float) * v_size_ * m_size_);
+      for(int k=0; k<block_row; k++)
+        for(int l=0; l<block_col; l++)
+          mat[k*v_size_ + l] = large_mat[(i+k)*num_input + j + l];
 
       // 3) Call a function `blockMV() to execute MV multiplication
       const float* ret = this->blockMV();
@@ -127,7 +134,7 @@ void FPGA::largeMV(const float* large_mat, const float* input, float* output, in
       // 4) Accumulate intermediate results
       for(int row = 0; row < block_row; ++row)
         output[i + row] += ret[row];
-    } 
+    }
   }
 }
 
@@ -136,14 +143,14 @@ void FPGA::largeMM(const float* weight_mat, const float* input_mat, float* outpu
   float* m1 = this->matrix_M1();
   float* m2 = this->matrix_M2();
 
-  // 0) Initialize output vector		
+  // 0) Initialize output vector                
   for(int i = 0; i < num_output*num_matrix2; ++i)
     output[i] = 0;
 
   for(int i = 0; i < num_output; i += v_size_)
   {
     for(int j = 0; j < num_input; j += v_size_)
-    {			
+    {
       for(int k = 0; k < num_matrix2; k += v_size_)
       {
         // 0) Initialize input vector
@@ -151,12 +158,20 @@ void FPGA::largeMM(const float* weight_mat, const float* input_mat, float* outpu
         int block_col_1 = min(v_size_, num_input-j);
         int block_col_2 = min(v_size_, num_matrix2-k);
 
-        // 1) Assign a m1
-        // IMPLEMENT THIS
+        // 1) Assign a m1  
+        memset(m1, 0, sizeof(float) * v_size_ * v_size_);
+        for(int x=0; x<block_row; x++){
+          for(int y=0; y<block_col_1; y++)
+            m1[x*v_size_ + y] = weight_mat[(i+x)*num_input + j + y];
+        }
 
-        // 2) Assign a m2
-        // IMPLEMENT THIS
-
+        // 2) Assign a m2 
+        memset(m2, 0, sizeof(float) * v_size_ * v_size_);
+        for(int x=0; x<block_col_1; x++){
+          for(int y=0; y<block_col_2; y++)
+            m2[x*v_size_ + y] = input_mat[(j+x)*num_matrix2 + k + y];
+        }
+        
         // 3) Call a function `blockMM() to execute Matrix matrix multiplication
         const float* ret = this->blockMM();
 
@@ -168,9 +183,8 @@ void FPGA::largeMM(const float* weight_mat, const float* input_mat, float* outpu
             output[(i + n) + (k + m)*num_output] += ret[n*v_size_ + m];
           }
         }
-        
       }
-    } 
+    }
   }
 }
 
@@ -192,13 +206,25 @@ void FPGA::convLowering(const std::vector<std::vector<std::vector<std::vector<fl
   int input_channel = cnn_weights[0].size();
   int conv_height = cnn_weights[0][0].size();
   int conv_width = cnn_weights[0][0][0].size();
-  //int input_channel = cnn_weights.size();
   int input_height = inputs[0].size();
   int input_width = inputs[0][0].size();
+  int num_h = input_height - conv_height + 1;
+  int num_w = input_width - conv_width + 1;
 
   // IMPLEMENT THIS
-  // For example,
-  // new_weights[0][0] = cnn_weights[0][0][0][0];
-  // new_inputs[0][0] = inputs[0][0][0];
-  
+  // Assign conv_weights
+  for(int c1=0; c1<conv_channel; c1++)
+    for(int c2=0; c2<input_channel; c2++)
+      for(int i=0; i<conv_height; i++)
+        for(int j=0; j<conv_width; j++)
+          new_weights[c1][c2*conv_height*conv_width + i*conv_width + j] = cnn_weights[c1][c2][i][j];
+
+  // Assign new_inputs
+  for(int c=0; c<input_channel; c++)
+    for(int i=0; i<num_h; i++)
+      for(int j=0; j<num_w; j++)
+        for(int x=0; x<conv_height; x++)
+          for(int y=0; y<conv_width; y++)
+            new_inputs[c*conv_height*conv_width + x*conv_width + y][i*num_w + j] = inputs[c][i+x][j+y];
+
 }
